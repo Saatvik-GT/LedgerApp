@@ -1,0 +1,270 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Simple Ledger</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #f8fafc; /* A light gray background */
+        }
+        .container {
+            max-width: 500px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        .transaction-item {
+            border-bottom: 1px solid #e2e8f0;
+            padding: 12px 4px;
+        }
+        .balance-display {
+            border-bottom: 2px solid #cbd5e1;
+            padding-bottom: 15px;
+            margin-bottom: 30px;
+        }
+        /* Modal styles */
+        .modal-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(0, 0, 0, 0.6);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            z-index: 100;
+        }
+        .modal-content {
+            background: #fff;
+            padding: 30px;
+            border-radius: 15px;
+            box-shadow: 0 5px 15px rgba(0,0,0,0.3);
+            width: 90%;
+            max-width: 400px;
+        }
+        .btn-press:active {
+            transform: scale(0.96);
+            transition: transform 0.1s;
+        }
+    </style>
+</head>
+<body class="text-gray-800">
+
+    <div class="container">
+
+        <!-- Header: Balance and Date -->
+        <header class="balance-display text-center mb-8">
+            <p class="text-xl text-gray-600">Remaining Balance</p>
+            <h1 id="current-balance" class="text-6xl font-bold text-gray-900">₹0.00</h1>
+            <p id="current-date" class="text-lg text-gray-500 mt-2"></p>
+        </header>
+
+        <!-- Input Section -->
+        <div class="mb-10 space-y-4">
+            <input type="number" id="transaction-amount" placeholder="Enter amount" class="w-full text-3xl p-3 bg-white border-2 border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-center">
+            <div class="grid grid-cols-2 gap-4 pt-2">
+                <button id="add-btn" class="bg-green-600 text-white text-2xl font-bold py-4 rounded-lg shadow-md hover:bg-green-700 btn-press">Add (+)</button>
+                <button id="deduct-btn" class="bg-red-600 text-white text-2xl font-bold py-4 rounded-lg shadow-md hover:bg-red-700 btn-press">Deduct (-)</button>
+            </div>
+        </div>
+        
+        <!-- Transaction History -->
+        <div id="history-list">
+            <!-- Transactions will be injected here -->
+        </div>
+        
+        <div class="text-center mt-8">
+            <button id="reset-app-btn" class="text-base text-gray-500 hover:text-red-600">Reset All Data</button>
+        </div>
+
+    </div>
+
+    <!-- Initial Balance Modal -->
+    <div id="initial-balance-modal" class="modal-overlay hidden">
+        <div class="modal-content text-center space-y-4">
+            <h2 class="text-3xl font-bold">Welcome!</h2>
+            <p class="text-lg text-gray-600">Set your starting balance.</p>
+            <input type="number" id="initial-balance-input" placeholder="e.g., 1000" class="w-full text-2xl p-3 border-2 border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-center">
+            <button id="set-initial-balance-btn" class="w-full bg-blue-600 text-white text-xl font-bold py-3 rounded-lg hover:bg-blue-700 btn-press">Set Balance</button>
+        </div>
+    </div>
+
+    <script>
+    document.addEventListener('DOMContentLoaded', () => {
+        // --- DOM Elements ---
+        const currentBalanceEl = document.getElementById('current-balance');
+        const currentDateEl = document.getElementById('current-date');
+        const amountInput = document.getElementById('transaction-amount');
+        const addBtn = document.getElementById('add-btn');
+        const deductBtn = document.getElementById('deduct-btn');
+        const historyList = document.getElementById('history-list');
+        const resetBtn = document.getElementById('reset-app-btn');
+        
+        const initialModal = {
+            overlay: document.getElementById('initial-balance-modal'),
+            input: document.getElementById('initial-balance-input'),
+            setBtn: document.getElementById('set-initial-balance-btn'),
+        };
+
+        // --- State ---
+        let state = {
+            transactions: [],
+        };
+
+        // --- Utility Functions ---
+        const formatCurrency = (amount) => new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(amount);
+        const formatDate = (date) => date.toLocaleDateString('en-IN', { day: 'numeric', month: 'numeric', year: '2-digit' });
+
+        // --- Core Logic ---
+
+        /**
+         * Recalculates all running balances based on the sorted transaction list.
+         */
+        const recalculateBalances = () => {
+            let runningBalance = 0;
+            state.transactions.forEach(tx => {
+                if (tx.type === 'add') {
+                    runningBalance += tx.amount;
+                } else {
+                    runningBalance -= tx.amount;
+                }
+                tx.balanceAfter = runningBalance;
+            });
+        };
+        
+        /**
+         * Renders the entire UI based on the current state.
+         */
+        const renderUI = () => {
+            // Sort transactions by date and time
+            state.transactions.sort((a, b) => a.id - b.id);
+            recalculateBalances();
+
+            // Get the latest balance
+            const currentBalance = state.transactions.length > 0 ? state.transactions[state.transactions.length - 1].balanceAfter : 0;
+            currentBalanceEl.textContent = formatCurrency(currentBalance);
+            
+            // Render history
+            historyList.innerHTML = '';
+            [...state.transactions].reverse().forEach(tx => {
+                const amountColor = tx.type === 'add' ? 'text-green-600' : 'text-red-600';
+                const sign = tx.type === 'add' ? '+' : '-';
+                const date = new Date(tx.id);
+
+                const transactionEl = document.createElement('div');
+                transactionEl.className = 'transaction-item flex justify-between items-center text-xl';
+                transactionEl.innerHTML = `
+                    <div>
+                        <span class="font-bold ${amountColor}">${sign}${formatCurrency(tx.amount)}</span>
+                    </div>
+                    <div class="text-right text-base">
+                        <span class="text-gray-600">Bal: ${formatCurrency(tx.balanceAfter)}</span>
+                        <span class="text-gray-400 ml-3">${formatDate(date)}</span>
+                    </div>
+                `;
+                historyList.appendChild(transactionEl);
+            });
+        };
+        
+        /**
+         * Saves the current state to localStorage.
+         */
+        const saveData = () => {
+            localStorage.setItem('simpleLedgerData', JSON.stringify(state));
+        };
+
+        /**
+         * Adds a new transaction and updates the app.
+         * @param {'add' | 'deduct'} type - The type of transaction.
+         */
+        const handleAddTransaction = (type) => {
+            const amount = parseFloat(amountInput.value);
+
+            if (isNaN(amount) || amount <= 0) {
+                // We can use a more user-friendly notification in the future
+                amountInput.classList.add('border-red-500');
+                setTimeout(()=> amountInput.classList.remove('border-red-500'), 1500);
+                return;
+            }
+
+            const newTransaction = {
+                id: Date.now(), // Use timestamp for sorting
+                type: type,
+                amount: amount,
+                balanceAfter: 0, // Will be recalculated
+            };
+
+            state.transactions.push(newTransaction);
+            amountInput.value = ''; // Clear input
+
+            renderUI();
+            saveData();
+        };
+        
+        /**
+         * Handles setting the initial balance from the modal.
+         */
+        const handleSetInitialBalance = () => {
+            const amount = parseFloat(initialModal.input.value);
+            if (isNaN(amount) || amount < 0) {
+                alert('Please enter a valid starting balance.');
+                return;
+            }
+            
+            const initialTransaction = {
+                id: Date.now(),
+                type: 'add',
+                amount: amount,
+                balanceAfter: amount,
+            };
+            
+            state.transactions.push(initialTransaction);
+            
+            renderUI();
+            saveData();
+            
+            initialModal.overlay.classList.add('hidden');
+        };
+
+        /**
+         * Initializes the application.
+         */
+        const initializeApp = () => {
+            // Set current date in header
+            currentDateEl.textContent = new Date().toLocaleDateString('en-GB', {
+                weekday: 'long', year: 'numeric', month: 'long', day: 'numeric'
+            });
+
+            const savedData = localStorage.getItem('simpleLedgerData');
+            if (savedData) {
+                state = JSON.parse(savedData);
+                renderUI();
+            } else {
+                // First time user, show modal
+                initialModal.overlay.classList.remove('hidden');
+            }
+            
+            // --- Event Listeners ---
+            addBtn.addEventListener('click', () => handleAddTransaction('add'));
+            deductBtn.addEventListener('click', () => handleAddTransaction('deduct'));
+            initialModal.setBtn.addEventListener('click', handleSetInitialBalance);
+            resetBtn.addEventListener('click', () => {
+                // Using a custom modal for confirm would be better, but confirm is simple
+                if (window.confirm('Are you sure you want to delete all data? This cannot be undone.')) {
+                    localStorage.removeItem('simpleLedgerData');
+                    state.transactions = [];
+                    renderUI();
+                    initialModal.overlay.classList.remove('hidden');
+                }
+            });
+        };
+
+        initializeApp();
+    });
+    </script>
+</body>
+</html>
